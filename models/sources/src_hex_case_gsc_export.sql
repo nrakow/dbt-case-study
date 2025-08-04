@@ -1,8 +1,9 @@
+-- merge incremental_strategy preferred due to stable unique_key
 {{
   config(
     materialized = 'incremental',
     unique_key = 'RESTAURANT_ID',
-    incremental_strategy = 'merge' -- merge perferred due to stable unique_key
+    incremental_strategy = 'merge'
   )
 }}
 

@@ -56,10 +56,9 @@ SELECT
                 OR domain_name_cleaned LIKE '%' || REPLACE(query_cleaned,' ','') || '%')
             OR (  -- Match if at least 2 of the first 3 words in the query appear in the domain name.
                   -- Example: 'pizza dados' matches 'dadospizzaok'
-                  -- single charactor words excluded due to false positives
                   (
-                      CASE WHEN ARRAY_SIZE(SPLIT(query_cleaned, ' ')) > 0
-                                AND LENGTH(SPLIT(query_cleaned, ' ')[0]) > 1
+                      CASE WHEN ARRAY_SIZE(SPLIT(query_cleaned, ' ')) > 0 -- non null
+                                AND LENGTH(SPLIT(query_cleaned, ' ')[0]) > 1 -- greater than 1 character
                                 AND POSITION(SPLIT(query_cleaned, ' ')[0] IN domain_name_cleaned) > 0 THEN 1 ELSE 0 END
                       +
                       CASE WHEN ARRAY_SIZE(SPLIT(query_cleaned, ' ')) > 1
@@ -70,7 +69,7 @@ SELECT
                                 AND LENGTH(SPLIT(query_cleaned, ' ')[2]) > 1
                                 AND POSITION(SPLIT(query_cleaned, ' ')[2] IN domain_name_cleaned) > 0 THEN 1 ELSE 0 END
                     ) >= 2
-                  AND query_raw NOT LIKE '%near me%' -- avoids false positives
+                  AND query_raw NOT LIKE '%near me%' -- avoids many false positives
                   AND (query_raw NOT LIKE '%india% in%' OR query_raw NOT LIKE '%in% india%') -- any query with 'indian in' would match any name with 'india'
                 )
             )
@@ -84,7 +83,7 @@ SELECT
                 )
                 OR (
                     (domain_name_cleaned like 'mediterranean%' and query_cleaned = 'mediterranean')
-                    OR (domain_name_cleaned like '%aandr%' and query_cleaned like 'a&r') -- incorrect due to special char being stripped w/ 'and' in domain
+                    OR (domain_name_cleaned like '%aandr%' and query_cleaned like 'a&r') -- special char stripped in cleaning caused misclassification due to 'and' in domain
                     )
         THEN 'Branded'
         ELSE 'Unbranded'
