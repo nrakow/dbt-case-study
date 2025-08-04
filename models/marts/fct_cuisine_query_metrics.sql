@@ -11,7 +11,7 @@ with agg_metrics as (
         sum(q.clicks) as total_clicks,
         sum(q.impressions) as total_impressions,
         round(sum(q.clicks) * 100.0 / nullif(sum(q.impressions), 0), 2) as ctr,
-        round(avg(q.position), 2) as avg_position -- using weighted average
+        SUM(position * impressions) / NULLIF(SUM(impressions), 0) AS avg_position -- using weighted average
     from {{ ref('int_queries_classified') }} q
     join {{ ref('stg_cuisines') }} c using (restaurant_id)
     group by c.cuisine, q.search_type
