@@ -6,4 +6,27 @@ sources:
     schema: data_outputs
     tables:
       - name: hex_case_gsc_export
+        description: "Raw Google Search Console export"
+        columns:
+          - name: RESTAURANT_ID
+            tests:
+              - not_null
+          - name: DOMAIN
+            tests:
+              - not_null
+          - name: DATA
+            tests:
+              - not_null
+          - name: _UPDATED_AT
+            tests:
+              - not_null
+
       - name: hex_brand_cuisine_export
+        description: "Raw cuisine data with one or more cuisines per restaurant"
+        columns:
+          - name: RESTAURANT_ID
+            tests:
+              - not_null
+          - name: CUISINES
+            tests:
+              - not_null
