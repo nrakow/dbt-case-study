@@ -50,7 +50,7 @@ This includes:
 To reduce false positives:
 - All single-letter queries excluded
 - Single-word cuisine terms like "thai" or "pizza" are excluded
-- Manual exceptions for known edge cases, which can be identified by reviewing of 'Branded' queries with low similarity score
+- Manual exceptions for known edge cases, which can be identified by reviewing 'Branded' queries with low similarity score
 
 All remaining queries are classified as unbranded.
 
