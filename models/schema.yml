@@ -1,0 +1,75 @@
+version: 2
+
+models:
+  - name: stg_queries
+    description: "Flattened query data from GSC export"
+    columns:
+      - name: RESTAURANT_ID
+        tests: [not_null]
+      - name: DOMAIN
+        tests: [not_null]
+      - name: clicks
+        tests:
+          - not_null
+      - name: ctr
+        tests:
+          - not_null
+      - name: impressions
+        tests:
+          - not_null
+      - name: position
+        tests:
+          - not_null
+      - name: query
+        tests:
+          - not_null
+
+  - name: stg_metadata_cuisine_names
+    description: "Reference list of known cuisine names"
+    columns:
+      - name: cuisine
+        tests:
+          - not_null
+          - unique
+  - name: int_queries_classified
+    description: "Classifies search queries as Branded or Unbranded using fuzzy string similarity, substring logic, and domain heuristics"
+    columns:
+      - name: RESTAURANT_ID
+        description: "Unique identifier for the restaurant"
+        tests: [not_null]
+
+      - name: DOMAIN
+        description: "The full domain name used in GSC export"
+        tests: [not_null]
+
+      - name: search_type
+        description: "Branded or Unbranded classification"
+        tests:
+          - accepted_values:
+              values: ['Branded', 'Unbranded']
+
+  - name: fct_restaurant_query_metrics
+    description: "Query metrics aggregated at the restaurant level"
+    columns:
+      - name: RESTAURANT_ID
+        tests: [not_null]
+      - name: search_type
+        tests:
+          - accepted_values:
+              values: ['Branded', 'Unbranded']
+      - name: pct_clicks
+        description: "Percent of total clicks from either branded or unbranded queries"
+        tests: [not_null]
+
+  - name: fct_cuisine_query_metrics
+    description: "Query metrics aggregated by cuisine group"
+    columns:
+      - name: cuisine
+        tests: [not_null]
+      - name: search_type
+        tests:
+          - accepted_values:
+              values: ['Branded', 'Unbranded']
+      - name: pct_clicks
+        description: "Percent of total clicks from either branded or unbranded queries"
+        tests: [not_null]

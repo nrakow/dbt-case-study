@@ -1,0 +1,12 @@
+{{ config(materialized = 'table') }}
+
+    SELECT
+        RESTAURANT_ID,
+        DOMAIN,
+        f.value:clicks::INT AS clicks,
+        f.value:ctr::FLOAT AS ctr,
+        f.value:impressions::INT AS impressions,
+        f.value:position::FLOAT AS position,
+        f.value:keys[0]::STRING AS query
+    FROM {{ source('pc_fivetran_db', 'hex_case_gsc_export') }},
+    LATERAL FLATTEN(INPUT => TRY_PARSE_JSON(DATA):rows) f
