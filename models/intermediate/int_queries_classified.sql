@@ -78,7 +78,7 @@ SELECT
             AND query_cleaned NOT IN ('tandor','viet','pasta','latino','egg','india','bahn','cuisine','waffles','pizza','restaurant','express','bar','grill','bakery','spice','best delivery pizza chicago','pastery','fries','salad','bagel', 'bistro','restaurant','burger', 'shawarma', 'taqueria', 'hibachi', 'chicken','taco', 'teriyaki', 'noodles', 'burrito','vietnam')
             AND NOT (domain_name_cleaned = 'flavorsofindia' and query_raw like 'flavorful%')
             AND query_cleaned not like 'delivery pizza%'
-            AND NOT (domain_name_cleaned = 'smashsd' and query_cleaned not like 'smash%burger%')
+            AND NOT (domain_name_cleaned = 'smashsd' and query_cleaned like 'smash%burger%')
             AND NOT (domain_name_cleaned = 'andalelatinogrill' and query_cleaned = 'latin american grill')
                 )
                 OR (
