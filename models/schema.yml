@@ -9,20 +9,15 @@ models:
       - name: DOMAIN
         tests: [not_null]
       - name: clicks
-        tests:
-          - not_null
+        tests: [not_null]
       - name: ctr
-        tests:
-          - not_null
+        tests: [not_null]
       - name: impressions
-        tests:
-          - not_null
+        tests: [not_null]
       - name: position
-        tests:
-          - not_null
+        tests: [not_null]
       - name: query
-        tests:
-          - not_null
+        tests: [not_null]
 
   - name: stg_metadata_cuisine_names
     description: "Reference list of known cuisine names"
@@ -31,17 +26,16 @@ models:
         tests:
           - not_null
           - unique
+
   - name: int_queries_classified
     description: "Classifies search queries as Branded or Unbranded using fuzzy string similarity, substring logic, and domain heuristics"
     columns:
       - name: RESTAURANT_ID
         description: "Unique identifier for the restaurant"
         tests: [not_null]
-
       - name: DOMAIN
         description: "The full domain name used in GSC export"
         tests: [not_null]
-
       - name: search_type
         description: "Branded or Unbranded classification"
         tests:
@@ -73,3 +67,88 @@ models:
       - name: pct_clicks
         description: "Percent of total clicks from either branded or unbranded queries"
         tests: [not_null]
+
+  - name: fct_search_metrics_unified
+    description: |
+      Unified search metrics fact table containing:
+      - Restaurant grain (restaurant_id + search_type)
+      - Cuisine grain (cuisine + search_type, full attribution for multi-cuisine restaurants; non-additive across cuisines)
+      - Global grain (search_type totals across all restaurants; avoids multi-cuisine double-counting)
+    columns:
+      - name: grain
+        description: "Grain of aggregation: restaurant, cuisine, or global"
+        tests:
+          - accepted_values:
+              values: ['restaurant', 'cuisine', 'global']
+      - name: restaurant_id
+        description: "Restaurant identifier; only populated for grain='restaurant'"
+        tests:
+          - not_null:
+              where: "grain = 'restaurant'"
+      - name: cuisine
+        description: "Cuisine name; only populated for grain='cuisine'"
+        tests:
+          - not_null:
+              where: "grain = 'cuisine'"
+      - name: search_type
+        description: "Branded or Unbranded classification"
+        tests:
+          - accepted_values:
+              values: ['Branded', 'Unbranded']
+      - name: pct_clicks
+        description: "Percent of total clicks for this grain's parent group"
+        tests: [not_null]
+
+  - name: fct_unbranded_ctr_residual
+    description: |
+        Position-adjusted CTR residual and NBOI per restaurant for unbranded search.
+        Benchmarks expected CTR by rounded position bin using impressions-weighted, leave-one-out logic.
+        Includes z-score for statistical signal strength.
+    columns:
+      - name: restaurant_id
+        description: Restaurant identifier
+        tests:
+          - not_null
+
+      - name: pos_bin
+        description: Rounded average position used as the benchmark bin
+        tests:
+          - not_null
+
+      - name: avg_position
+        description: Impressions-weighted average position from fct_search_metrics_unified
+        tests:
+          - not_null
+
+      - name: ctr
+        description: Actual CTR (%) for unbranded, restaurant grain
+        tests:
+          - not_null
+      - name: expected_ctr
+        description: Expected CTR (%) given position bin (leave-one-out)
+        tests:
+          - not_null
+
+      - name: position_ctr_residual
+        description: Actual CTR minus expected CTR (percentage points, + = over-perform, - = under-perform)
+
+      - name: nboi_click_gap_pct
+        description: Positive under-performance gap in percentage points, floored at 0
+
+      - name: nboi_click_opportunity
+        description: Estimated extra clicks if lifted to expected CTR at current impressions
+
+      - name: total_impressions
+        description: Total impressions for unbranded, restaurant grain
+        tests:
+          - not_null
+
+      - name: total_clicks
+        description: Total clicks for unbranded, restaurant grain
+        tests:
+          - not_null
+
+      - name: residual_z_score
+        description: |
+          Z-score of residual clicks vs. expected clicks using binomial variance.
+          Higher absolute values indicate greater statistical significance.
