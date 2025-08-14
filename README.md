@@ -1,74 +1,138 @@
 
 # 📦 Project Overview
 
-The purpose of this dbt project is to analyze Google Search Console (GSC) data across restaurants and cuisines. Specifically, the project tracks:
+This dbt project analyzes Google Search Console (GSC) data for Owner.com restaurants to measure SEO performance across branded and unbranded searches at multiple aggregation levels.
 
-- Total impressions, clicks, CTR, and position
-- Classification of queries as branded vs. unbranded
-- Share of branded/unbranded searches at both the restaurant and cuisine level
+The transformation pipeline:
+
+1. Flatten and clean raw JSON from GSC exports.
+2. Classify search queries as branded or unbranded.
+3. Aggregate metrics at the restaurant, cuisine, and global levels.
+4. Calculate the share of queries, clicks, and impressions by search type.
+5. Produce additional views (restaurant-level and cuisine-level) sourced from a unified aggregated model to avoid duplication.
+6. Identify unbranded CTR opportunity using position-based benchmarks and quantify potential incremental clicks.
 
 ---
 
 ## 🗂️ DBT Project Structure
 
 ```text
-.
-├── models/
-│   ├── src/           # Raw source tables from Snowflake
-│   ├── stg/           # Staging: flattened & cleaned inputs
-│   ├── int/           # Intermediate logic: query classification
-│   └── fct/           # Final models: aggregated performance
+models/
+├── src/ # Source models from Snowflake
+│ ├── src_hex_case_gsc_export.sql # Raw GSC export (JSON array)
+│ └── src_hex_brand_cuisine_export.sql # Cuisine mappings (JSON array)
+│
+├── stg/ # Staging models
+│ ├── stg_queries.sql # Flatten & extract query-level metrics
+│ ├── stg_cuisines.sql # Flatten cuisines per restaurant
+│ └── stg_metadata_cuisine_names.sql # Reference list of cuisine names
+│
+├── int/ # Intermediate logic
+│ └── int_queries_classified.sql # Branded vs. unbranded classification
+│
+└── fct/ # Final aggregated outputs
+├── fct_search_metrics_unified.sql # Aggregated metrics with grain dimension
+├── fct_restaurant_query_metrics.sql # Restaurant-level metrics (sourced from unified)
+├── fct_cuisine_query_metrics.sql # Cuisine-level metrics (sourced from unified)
 ```
 
 ---
 
-## 🔍 Key Models and Metrics
+## 🔍 Key Model: fct_search_metrics_unified
 
-### 1. `fct_restaurant_query_metrics`
-- **Grain**: `restaurant_id + search_type`
-- Metrics:
-  - Clicks, impressions, CTR
-  - Weighted average position
-  - Share of branded vs. unbranded queries, clicks, impressions
+**Grain dimension:**
+- **restaurant** → one row per `restaurant_id` + `search_type` (“Branded”, “Unbranded”)
+- **cuisine** → one row per `cuisine` + `search_type`
+- **global** → one row per `search_type` (computed to avoid double-counting multi-cuisine restaurants)
 
-### 2. `fct_cuisine_query_metrics`
-- **Grain**: `cuisine + search_type`
-- Same metrics as above, rolled up by cuisine
+> Restaurants can have multiple cuisines; this model assigns **full attribution** to each cuisine a restaurant has.
+
+**Metrics:**
+- **search_query_count** – Distinct queries for the restaurant/cuisine and `search_type`
+- **total_clicks** – Sum of clicks
+- **total_impressions** – Sum of impressions
+- **ctr** – Weighted CTR = `SUM(clicks) / SUM(impressions)`
+- **avg_position** – Weighted average position = `SUM(position * impressions) / SUM(impressions)`
+- **pct_unique_search_queries** – Share of unique queries per `search_type` within the restaurant/cuisine
+- **pct_clicks** – Share of clicks per `search_type` within the restaurant/cuisine
+- **pct_impressions** – Share of impressions per `search_type` within the restaurant/cuisine
+
+**Metric rationale:**
+- Summations preserve total volume for clicks and impressions
+- Weighted averages for CTR and position prevent low-volume queries from distorting results
+- Percent shares show each search type’s contribution within its parent group
 
 ---
 
 ## 🧠 Branded vs. Unbranded Classification
 
-Queries are classified as branded if they show high lexical or semantic similarity to the restaurant's domain name. 
+Implemented in **`int_queries_classified.sql`**.
 
-This includes:
+A query is **Branded** if it meets **any** of these criteria:
+- **String similarity**: Jaro-Winkler score between cleaned query and domain name ≥ 78.
+- **Substring match**: Domain name appears in query (or vice versa).
+- **Word overlap**: At least 2 of the first 3 words in the query appear in the domain name.
+- **Manual overrides**: Specific regex or text matches for known brand variations and false negatives.
 
-- Jaro-Winkler similarity score of cleaned query and domain name above 80
-- Substring matches between the cleaned query and domain name
-- Shared words (e.g., at least 2 of the first 3 words in the query appear in the domain)
+**False positive prevention:**
+- Single-letter queries excluded.
+- Queries matching single-word cuisine names (e.g., `thai`, `pizza`) excluded.
+- Manually excluded patterns (e.g., `"delivery pizza%"` for certain domains).
 
-To reduce false positives:
-- All single-letter queries excluded
-- Single-word cuisine terms like "thai" or "pizza" are excluded
-- Manual exceptions for known edge cases, which can be identified by reviewing 'Branded' queries with low similarity score
+**Example cleaning steps** (from `stg_queries.sql`):
+```sql
+-- Remove common extraneous terms
+REGEXP_REPLACE(query, '\\b(near me|menu|buffet|open now|...)\\b', '')
 
-All remaining queries are classified as unbranded.
+-- Remove prices & symbols
+REGEXP_REPLACE(..., '\\$[0-9]+|&', '')
 
-Logic lives in: `int_queries_classified.sql`
+-- Remove non-alphanumeric characters
+REGEXP_REPLACE(..., '[^a-z0-9 ]', '')
+
+-- Lowercase and remove trailing "s"
+LOWER(...),
+REGEXP_REPLACE(..., 's$', '')
+```
+---
+## 🧾 Slowly Changing Dimensions (SCD): Cuisine Changes
+
+In production, cuisine classification changes are tracked using **Type 2 SCD**:
+- Insert a new row for each change with `effective_start_date` and `effective_end_date`.
+- Join metrics to the correct cuisine record based on the query’s event date.
+
+**Dataset constraint:** The provided queries lack timestamps, so Type 2 joining is not possible here.
+
+**Practical alternative: Snapshot-based approach**
+- Build a `dim_restaurant_cuisine_snapshot` on a regular cadence (e.g., daily or weekly).
+- Join metrics to the snapshot in effect for the analysis period (controlled via dashboard filter).
+- Attributes all queries to the cuisine active during the selected window.
+
+**In dbt:**
+- Create `dim_restaurant_cuisine_snapshot`.
+- Use `is_incremental()` to track changes.
+- Apply date filters in the reporting layer to select a snapshot.
+
+While this method does not provide full record-level precision, it enables time-aware attribution of SEO performance in a way that is practical given the structure of the data. 
+A true Type 2 SCD with timestamps at the query level would be my recomendation.
 
 ---
 
-## 🧾 Slowly Changing Dimensions (SCD) Approach
+## ✅ Data Quality Checks
 
-In a production setting, the preferred strategy for handling changes to a restaurant’s cuisine classification would be a Type 2 Slowly Changing Dimension (SCD). This approach preserves historical accuracy by storing a new row each time a restaurant’s cuisine changes, along with `effective_start_date` and `effective_end_date`. This allows query-level facts to be joined to the appropriate version of the dimension based on when the event occurred.
+Currently implemented in **dbt tests**:
 
-However, the provided dataset does not include timestamps on individual queries, so it is not possible to determine when each event took place. Without that temporal context, a true Type 2 SCD implementation at the query level is not feasible.
+### Not null constraints
+- `restaurant_id`, `domain`, `clicks`, `ctr`, `impressions`, `position`, and `query` in staging models.  
+- `cuisine` in cuisine-level models.
 
-As a practical alternative, I would implement a snapshot-based approach that captures the state of each restaurant’s cuisine on a regular cadence, such as daily or weekly. This snapshot can be joined to query metrics at the `restaurant_id` level, with the analysis period controlled through a dashboard filter. All queries would then be attributed to the cuisine active during the selected time window.
+### Accepted values enforcement
+- `search_type` must be `"Branded"` or `"Unbranded"`.
+- `grain` must be `"restaurant"`, `"cuisine"`, or `"global"` in `fct_search_metrics_unified`.
 
-In dbt, this could be implemented by:
-- Creating a `dim_restaurant_cuisine_snapshot` model
-- Using `is_incremental()` logic to track changes
-- Applying date filters at the reporting layer to scope analysis to a given snapshot
+### Conditional null tests
+- `restaurant_id` must be populated when `grain = 'restaurant'`.
+- `cuisine` must be populated when `grain = 'cuisine'`.
 
-While this method does not provide full record-level precision, it enables time-aware attribution of SEO performance in a way that is practical given the structure of the data.
+### Uniqueness check
+- `cuisine` values in `stg_metadata_cuisine_names` must be unique.
